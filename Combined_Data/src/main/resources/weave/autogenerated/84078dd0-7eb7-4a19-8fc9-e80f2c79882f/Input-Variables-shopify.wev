@@ -1,0 +1,4 @@
+%dw 2.0
+
+type auto_84078dd0_7eb7_4a19_8fc9_e80f2c79882f_Input_Variables_shopify = { _?: Any }
+

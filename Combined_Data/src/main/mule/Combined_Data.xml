@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:db="http://www.mulesoft.org/schema/mule/db" xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns:shopify="http://www.mulesoft.org/schema/mule/shopify"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/shopify http://www.mulesoft.org/schema/mule/shopify/current/mule-shopify.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/db http://www.mulesoft.org/schema/mule/db/current/mule-db.xsd">
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="58559e3d-daa7-400c-9360-b0603d6b534d" >
+		<http:listener-connection host="0.0.0.0" port="8081" />
+	</http:listener-config>
+	<http:request-config name="HTTP_Request_configuration" doc:name="HTTP Request configuration" doc:id="609dd21b-aee5-4630-acee-58889f56f212" basePath="/number_verification">
+		<http:request-connection host="api.apilayer.com" protocol="HTTPS" port="443"/>
+	</http:request-config>
+	<http:request-config name="HTTP_Request_configuration2" doc:name="HTTP Request configuration2" doc:id="99609a44-dc44-404f-a79f-cbd1eeca9fe3" basePath="//ZipCodesAPI.svc/1.0/QuickGetZipCodeDetails" >
+		<http:request-connection protocol="HTTPS" host="api.zip-codes.com" />
+	</http:request-config>
+	<shopify:config name="Shopify_Connector_Config" doc:name="Shopify Connector Config" doc:id="dc2a8887-6c44-4e58-9a85-33a366cf2388" >
+		<shopify:basic-auth-connection username="17fff53ce348cbebffe2d56a4fb286a5" password="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" baseUri="https://batch27-l2-final-project.myshopify.com/" />
+	</shopify:config>
+	<http:request-config name="HTTP_Request_configuration1" doc:name="HTTP Request configuration" doc:id="d2f59795-4343-4da1-8fba-da2dd8cf4c53" basePath="/data/2.5" >
+		<http:request-connection host="api.openweathermap.org" port="443" protocol="HTTPS"/>
+	</http:request-config>
+	<db:config name="Database_Config" doc:name="Database Config" doc:id="03ce0921-b288-4719-8ca0-143b6be5432d" >
+		<db:my-sql-connection host="localhost" port="3306" user="root" password="root" database="team" />
+	</db:config>
+	<configuration-properties doc:name="Configuration properties" doc:id="637f59cf-84e1-4183-9b1f-efcf2c771e94" file="dev.yaml" />
+	<flow name="l2_projectFlow" doc:id="d3d35ad2-4af5-4424-bb97-dd2bdcb78cfa" >
+		<http:listener doc:name="Listener" doc:id="e430e75d-f6d7-463f-9469-4117a67537e9" config-ref="HTTP_Listener_config" path="l2"/>
+		<set-variable value='#["Batch-27-team-" ++ attributes.queryParams.team default "A"]' doc:name="Set Variable" doc:id="d73de1ec-0670-4505-89f1-d15797c2824a" variableName="team"/>
+		<shopify:customer-list doc:name="Customer List" doc:id="632ed4a7-9c9f-41f3-bf22-c1d99351b7b8" config-ref="Shopify_Connector_Config" />
+		<ee:transform doc:name="Filtered Data" doc:id="29ce4bc2-25db-4493-9a34-7f5b031a5314">
+			<ee:message>
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+var tag = (payload  map ((item, index) -> item filterObject ((value, key, index) -> key as String =="tags" or key as String =="email") ))
+ var shopify = payload.addresses
+var shop = shopify flatMap ((item, index) -> item)
+
+var shop1 = shop map (value,index)->{
+     (value),
+     (tag filter ($$==index ) )
+ }
+---
+shop1]]></ee:set-payload>
+			</ee:message>
+			<ee:variables >
+			</ee:variables>
+		</ee:transform>
+		<foreach doc:name="For Each" doc:id="5343800e-74e6-40fd-811b-770efa427ec1" >
+			<http:request method="GET" doc:name="Request" doc:id="636bea05-2f02-4cef-9c81-7feafcf52a08" config-ref="HTTP_Request_configuration" path="/validate" target="kulud">
+			<http:headers ><![CDATA[#[output application/java
+---
+{
+	"apikey" : "txlZWHxYLKYZDBb8B2343tlbBwhjTl1p"
+}]]]></http:headers>
+				<http:query-params><![CDATA[#[output application/java
+---
+{
+	number : payload.phone
+}]]]></http:query-params>
+		</http:request>
+			<choice doc:name="Choice" doc:id="3133eeb3-fab1-4705-8ea5-46920a272d3c">
+			<when expression="#[vars.kulud.valid==true and payload.tags == vars.team]">
+				<flow-ref doc:name="Zip_CodeAndWeather" doc:id="9e2a815b-eb8a-40f9-a832-7bdd9b419be4" name="Zip_CodeAndWeather" />
+				<db:insert doc:name="Success_DB" doc:id="0b282c5e-ae54-439e-9290-a729c466e5c6" config-ref="Database_Config">
+					<db:sql><![CDATA[insert into kulud(tags,TelephoneNumber,customerID,id_hr,zipCode,fullName,email,temp_min,temp_max,lattitud,longitude,muleTimestamp) values(:tags,:phone,:customer_id,:id,:ZipCode,:fullName,:email,:tempmin,:tempmax,:Latitude,:Longitude,:muleTimestamp)]]></db:sql>
+					<db:input-parameters><![CDATA[#[{
+    "customer_id": payload.customer_id ,
+    "fullName": payload.first_name ++ " " ++ payload.last_name,
+   
+    "phone": payload.phone ,
+    "email": payload.email ,
+    "tags": payload.tags,
+    "tempmin": payload.temp_min,
+    "tempmax": payload.temp_max,
+    "Latitude": payload.Latitude,
+    "Longitude": payload.Longitude,
+    "ZipCode": payload.ZipCode,
+    "id": payload.id_hr ,
+    "muleTimestamp": payload.muleTimestamp as String
+}]]]></db:input-parameters>
+				</db:insert>
+			</when>
+			<otherwise>
+				<flow-ref doc:name="Zip_CodeAndWeather" doc:id="84968faa-55ea-4884-bbab-b152031411ce" name="Zip_CodeAndWeather" />
+				<db:insert doc:name="Error_DB" doc:id="4c70ff97-dff4-4d47-82b6-66703189bf7a" config-ref="Database_Config">
+					<db:sql><![CDATA[insert into kulud_error(tags,TelephoneNumber,customerID,id_hr,zipCode,fullName,email,temp_min,temp_max,lattitud,longitude,muleTimestamp) values(:tags,:phone,:customer_id,:id,:ZipCode,:fullName,:email,:tempmin,:tempmax,:Latitude,:Longitude,:muleTimestamp)]]></db:sql>
+					<db:input-parameters><![CDATA[#[{
+    "customer_id": payload.customer_id ,
+    "fullName": payload.first_name ++ " " ++ payload.last_name,
+   
+    "phone": payload.phone ,
+    "email": payload.email ,
+    "tags": payload.tags,
+    "tempmin": payload.temp_min,
+    "tempmax": payload.temp_max,
+    "Latitude": payload.Latitude,
+    "Longitude": payload.Longitude,
+    "ZipCode": payload.ZipCode,
+    "id": payload.id_hr ,
+    "muleTimestamp": payload.muleTimestamp as String
+}]]]></db:input-parameters>
+				</db:insert>
+			</otherwise>
+		</choice>
+		</foreach>
+	</flow>
+	<sub-flow name="Zip_CodeAndWeather" doc:id="84078dd0-7eb7-4a19-8fc9-e80f2c79882f" >
+		<http:request method="GET" doc:name="l1" doc:id="ff2c1a2e-8cb0-4514-b14c-3ddfe10c7ac1" config-ref="HTTP_Request_configuration2" path='#["/" ++ payload.zip as Number]' target="zip">
+					<http:query-params><![CDATA[#[output application/java
+---
+{
+	"Key" : "BGP7KWQ6UT34AXJJWM48"
+}]]]></http:query-params>
+				</http:request>
+		<http:request method="GET" doc:name="weather" doc:id="75016dd5-ace1-4766-a590-cc302eabd564" config-ref="HTTP_Request_configuration1" path="/weather" target="weather">
+					<http:query-params><![CDATA[#[output application/java
+---
+{
+	appid : "912f06f74d4303e2abbcaab107c2a8c6",
+	lon : vars.zip.Longitude,
+	lat : vars.zip.Latitude
+}]]]></http:query-params>
+				</http:request>
+		<ee:transform doc:name="Transform Message" doc:id="226cf5ca-464f-448b-803c-d11e51f31f4e">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+var temp = vars.weather.main filterObject ((value, key, index) -> key as String == "temp_min" or key as String == "temp_max")
+var shopify= payload
+var zip1 = vars.zip
+
+---
+((shopify ++ temp ++ zip1) filterObject ((value, key, index) -> key as String != "City"  and key as String != "State" and key as String != "zip" and key as String != "County"  )) ++ {
+	"id_hr": ((((random() as String) splitBy  "")[0 to 16] filter ((item, index) -> item != "." and item != "0") ) joinBy  "")
+} ++ {
+	muleTimestamp: now() as String {format: "dd-MM-yyyy hh:mm:ss"}
+}]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+	</sub-flow>
+</mule>
